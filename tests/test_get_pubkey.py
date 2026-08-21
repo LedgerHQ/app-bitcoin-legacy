@@ -4,6 +4,9 @@ from ragger_bitcoin import RaggerClient
 from ragger_bitcoin.ragger_instructions import Instructions
 from ragger.navigator import NavInsID
 
+import pytest
+from ragger.error import ExceptionRAPDU
+
 
 def pubkey_instruction_approve(model: Firmware) -> Instructions:
     instructions = Instructions(model)
@@ -64,3 +67,49 @@ def test_get_public_key(navigator: Navigator, firmware: Firmware,
             instructions=pubkey_instruction_warning_approve(firmware),
             testname=f"{test_name}_{path}"
         )
+
+
+def test_get_public_key_root_rejected(client: RaggerClient):
+    """Test that getWalletPublicKey with an empty path (root level m/) is rejected.
+
+    With derivation path hardening, the firmware should not allow
+    derivation at the master level (depth 0) via getWalletPublicKey.
+    This relies on the OS-level PATH_APP_LOAD_PARAMS enforcement
+    (unless HAVE_APPLICATION_FLAG_DERIVE_MASTER is set).
+    """
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        # Empty path = root level derivation, should be rejected by the OS
+        client.app.getWalletPublicKey("")
+    # The ragger backend raises ExceptionRAPDU (with .status) before btchip
+    # can wrap it as BTChipException. The OS rejection surfaces as:
+    #   0x6982 = SECURITY_STATUS_NOT_SATISFIED (direct OS rejection)
+    #   0x6985 = CONDITIONS_OF_USE_NOT_SATISFIED
+    #   0x6f00 = SW_TECHNICAL_PROBLEM (bip32_derive fails → get_public_key
+    #           returns -1 → handler returns SW_TECHNICAL_PROBLEM)
+    assert exc_info.value.status in (0x6982, 0x6985, 0x6f00), (
+        f"Expected a security/path rejection error, got SW=0x{exc_info.value.status:04X}"
+    )
+
+
+def test_get_public_key_depth2_works(navigator: Navigator, firmware: Firmware,
+                                     client: RaggerClient, test_name: str):
+    """Test that getWalletPublicKey at depth >= 2 matching PATH_APP_LOAD_PARAMS works.
+
+    With PATH_APP_LOAD_PARAMS = "*/1'", the OS requires at least depth 2
+    where the second component is 1' (testnet coin_type). A depth-1 path
+    like m/44' alone does NOT match the "*/1'" prefix.
+    """
+    # m/44'/1' matches "*/1'" — purpose=44' (wildcard), coin_type=1' (testnet)
+    result = client.app.getWalletPublicKey("44'/1'")
+
+    # Should return a valid public key (65 bytes uncompressed) and chaincode (32 bytes)
+    assert len(result['publicKey']) == 65, (
+        f"Expected 65-byte uncompressed pubkey, got {len(result['publicKey'])} bytes"
+    )
+    assert result['publicKey'][0] == 0x04, (
+        f"Uncompressed pubkey should start with 0x04, got 0x{result['publicKey'][0]:02x}"
+    )
+    assert len(result['chainCode']) == 32, (
+        f"Expected 32-byte chaincode, got {len(result['chainCode'])} bytes"
+    )
+    assert len(result['address']) > 0, "Address should not be empty"
