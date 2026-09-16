@@ -7,3 +7,4 @@ obj
 .vscode
 build
 tests/snapshots-tmp
+main_nvram.bin
