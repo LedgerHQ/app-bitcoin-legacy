@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [2.4.13] - 2026-09-25
+
+### Fixed
+
+- Security fixes from `lib-app-bitcoin`: trusted input key generation, Peercoin amount decimals, P2WSH change detection, and swap authorization checks
+
+### Removed
+
+- Omni Layer display. Bitcoin OP_RETURN outputs carrying an Omni payload are now refused
+- Deprecated U2F browser client (`js/`)
+
 ## [2.4.11] - 2026-04-13
 
 ### Added
