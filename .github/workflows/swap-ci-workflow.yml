@@ -13,4 +13,5 @@ jobs:
     uses: LedgerHQ/app-exchange/.github/workflows/reusable_swap_functional_tests.yml@develop
     with:
       branch_for_bitcoin_legacy: ${{ github.ref }}
+      repo_for_bitcoin_legacy: ${{ github.repository }}
       test_filter: '"ltc or litecoin or Litecoin"'
