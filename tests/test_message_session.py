@@ -17,8 +17,11 @@ import struct
 import pytest
 
 from ragger.error import ExceptionRAPDU
+from ragger.firmware import Firmware
+from ragger.navigator import Navigator
 
 from ragger_bitcoin import RaggerClient
+from ragger_bitcoin.ragger_instructions import Instructions
 
 CLA = 0xE0
 INS_GET_TRUSTED_INPUT = 0x42
@@ -30,6 +33,7 @@ P2_FIRST, P2_OTHER = 0x01, 0x80
 HIS_P1_FIRST, HIS_P2_NEW = 0x00, 0x00
 
 SW_OK = 0x9000
+SW_CONDITIONS_OF_USE_NOT_SATISFIED = 0x6985
 SW_INCORRECT_DATA = 0x6A80
 
 # m/44'/1'/0'/0/0
@@ -63,6 +67,15 @@ def start_transaction(backend) -> int:
 def start_trusted_input(backend) -> int:
     return status_of(backend, apdu(INS_GET_TRUSTED_INPUT, 0x00, 0x00,
                                    struct.pack(">I", 0) + TX_VERSION + b"\x01"))
+
+
+def reject_message(model: Firmware) -> Instructions:
+    instructions = Instructions(model)
+    if model.name.startswith("nano"):
+        instructions.new_request("Cancel")
+    else:
+        instructions.reject_message()
+    return instructions
 
 
 class TestMessageSession:
@@ -107,6 +120,28 @@ class TestMessageSession:
 
         status = status_of(backend, apdu(INS_SIGN_MESSAGE, P1_PREPARE,
                                          P2_OTHER, b"i"))
+        assert status == SW_INCORRECT_DATA, f"got 0x{status:04X}"
+
+    def test_sign_after_rejection_is_refused(
+            self, navigator: Navigator, firmware: Firmware,
+            client: RaggerClient, test_name: str):
+        """A rejected message must not be offered for signing again."""
+        backend = client.app.dongle.transport_client
+        assert prepare_message(backend, 2, b"hi") == SW_OK
+
+        instructions = reject_message(firmware)
+        client.app.dongle.set_navigation(True, navigator, test_name, instructions)
+        try:
+            client.app.dongle.exchange(bytearray(apdu(INS_SIGN_MESSAGE, P1_SIGN,
+                                                      0x00, b"\x00")))
+            status = client.app.dongle.last_async_response().status
+        except ExceptionRAPDU as e:
+            status = e.status
+        client.app.dongle.set_navigation(False, navigator, test_name, instructions)
+        assert status == SW_CONDITIONS_OF_USE_NOT_SATISFIED, f"got 0x{status:04X}"
+
+        status = status_of(backend, apdu(INS_SIGN_MESSAGE, P1_SIGN, 0x00,
+                                         b"\x00"))
         assert status == SW_INCORRECT_DATA, f"got 0x{status:04X}"
 
 
