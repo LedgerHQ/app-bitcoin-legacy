@@ -74,7 +74,7 @@ def answer_warning(model: Firmware, accept: bool) -> Instructions:
             "Unverified", NavInsID.USE_CASE_REVIEW_TAP,
             NavInsID.USE_CASE_CHOICE_CONFIRM if accept
             else NavInsID.USE_CASE_CHOICE_REJECT)
-    return instructions
+    return instructions.no_snapshots()
 
 
 def rejected_status(client: RaggerClient, navigator: Navigator,

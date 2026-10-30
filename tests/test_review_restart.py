@@ -60,7 +60,7 @@ def review_first_output(model: Firmware) -> Instructions:
         instructions.new_request("Accept")
     else:
         instructions.review_start(output_count=1)
-    return instructions
+    return instructions.no_snapshots()
 
 
 def review_whole_transaction(model: Firmware) -> Instructions:
@@ -74,7 +74,7 @@ def review_whole_transaction(model: Firmware) -> Instructions:
         instructions.review_fees()
         instructions.same_request("Sign", NavInsID.USE_CASE_REVIEW_TAP,
                                   NavInsID.USE_CASE_REVIEW_CONFIRM)
-    return instructions
+    return instructions.no_snapshots()
 
 
 def navigated_status(client: RaggerClient, navigator: Navigator,

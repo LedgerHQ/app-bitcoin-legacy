@@ -110,7 +110,7 @@ def review_two_outputs(model: Firmware) -> Instructions:
         instructions.review_start(output_count=2)
         instructions.review_fees()
         instructions.confirm_transaction()
-    return instructions
+    return instructions.no_snapshots()
 
 
 def drive_to_outputs(client: RaggerClient, outputs: bytes) -> bytes:

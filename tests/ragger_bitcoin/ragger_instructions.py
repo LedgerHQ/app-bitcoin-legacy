@@ -18,6 +18,12 @@ class Instructions:
     def __str__(self):
         return "Data: {0}\n\t".format(self.data)
 
+    def no_snapshots(self):
+        """Navigates on the expected text alone, for tests that check status words."""
+        self.data['save_screenshot'] = [[False] * len(request)
+                                        for request in self.data['save_screenshot']]
+        return self
+
     def same_request(self, text, instruction_until_text=NavInsID.RIGHT_CLICK,
                      instruction_on_text=NavInsID.BOTH_CLICK, save_screenshot=True):
 

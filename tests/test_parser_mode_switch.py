@@ -97,7 +97,7 @@ def review_one_output(model: Firmware) -> Instructions:
         instructions.review_start(output_count=1)
         instructions.review_fees()
         instructions.confirm_transaction()
-    return instructions
+    return instructions.no_snapshots()
 
 
 def start_pass(backend, version: int, first: bool) -> int:

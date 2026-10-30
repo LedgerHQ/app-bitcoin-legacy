@@ -75,7 +75,7 @@ def reject_message(model: Firmware) -> Instructions:
         instructions.new_request("Cancel")
     else:
         instructions.reject_message()
-    return instructions
+    return instructions.no_snapshots()
 
 
 class TestMessageSession:
