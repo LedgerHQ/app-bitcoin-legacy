@@ -12,6 +12,11 @@ from its first byte. Before the fix, the parser was still waiting for A's second
 output and read B's output count as part of an amount, which misaligned the rest
 and was refused with 0x6F0F.
 
+The reset sits on P1 first, so a host could also restart the hashes without it:
+any refusal that drops the transaction state (here HASH SIGN before the review
+is done) let a P1 next chunk be parsed as a new header, still on A's review.
+P1 next is now refused unless a transaction is in progress.
+
 TestReviewRestartVulnerable is the pre-fix behaviour, kept skipped so the
 finding stays reproducible on an unfixed build.
 """
@@ -24,13 +29,19 @@ from ragger.navigator import Navigator, NavInsID
 from ragger_bitcoin import RaggerClient
 from ragger_bitcoin.ragger_instructions import Instructions
 
+from test_message_after_approval import hash_sign
 from test_op_return_omni import (CLA, INS_HASH_INPUT_FINALIZE_FULL,
-                                 SW_TECHNICAL_PROBLEM_2, drive_to_outputs,
-                                 payment_output)
+                                 INS_HASH_INPUT_START, SW_TECHNICAL_PROBLEM_2,
+                                 drive_to_outputs, payment_output)
 
 FINALIZE_P1_MORE, FINALIZE_P1_LAST = 0x00, 0x80
+HIS_P1_NEXT, HIS_P2_CONTINUE = 0x80, 0x80
 
 SW_OK = 0x9000
+SW_CONDITIONS_OF_USE_NOT_SATISFIED = 0x6985
+
+# Transaction B's header: version 1, one input.
+B_HEADER = b"\x01\x00\x00\x00\x01"
 
 
 def finalize(p1: int, outputs: bytes) -> bytes:
@@ -89,6 +100,19 @@ def leave_review_unfinished(client: RaggerClient, navigator: Navigator,
     assert status == SW_OK, f"got 0x{status:04X}"
 
 
+def restart_without_reset(client: RaggerClient) -> int:
+    """Drops the state with a refused HASH SIGN, then sends B's header as P1 next."""
+    backend = client.app.dongle.transport_client
+    status = hash_sign(backend)
+    assert status == SW_CONDITIONS_OF_USE_NOT_SATISFIED, f"got 0x{status:04X}"
+    try:
+        return backend.exchange_raw(
+            bytes([CLA, INS_HASH_INPUT_START, HIS_P1_NEXT, HIS_P2_CONTINUE,
+                   len(B_HEADER)]) + B_HEADER).status
+    except ExceptionRAPDU as e:
+        return e.status
+
+
 class TestReviewRestart:
 
     def test_new_transaction_is_reviewed_from_scratch(
@@ -102,6 +126,15 @@ class TestReviewRestart:
             review_whole_transaction(firmware),
             finalize(FINALIZE_P1_LAST, b"\x01" + payment_output(500)))
         assert status == SW_OK, f"got 0x{status:04X}"
+
+    def test_continuation_after_reset_is_refused(
+            self, navigator: Navigator, firmware: Firmware,
+            client: RaggerClient, test_name: str):
+        leave_review_unfinished(client, navigator, firmware, test_name)
+
+        status = restart_without_reset(client)
+        assert status == SW_CONDITIONS_OF_USE_NOT_SATISFIED, \
+            f"got 0x{status:04X}"
 
 
 @pytest.mark.skip(reason="V-047 pre-fix behaviour; unskip on an unfixed build")
@@ -121,3 +154,11 @@ class TestReviewRestartVulnerable:
         except ExceptionRAPDU as e:
             status = e.status
         assert status == SW_TECHNICAL_PROBLEM_2, f"got 0x{status:04X}"
+
+    def test_continuation_after_reset_restarts_the_parse(
+            self, navigator: Navigator, firmware: Firmware,
+            client: RaggerClient, test_name: str):
+        leave_review_unfinished(client, navigator, firmware, test_name)
+
+        status = restart_without_reset(client)
+        assert status == SW_OK, f"got 0x{status:04X}"
