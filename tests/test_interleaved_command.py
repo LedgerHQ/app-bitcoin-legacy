@@ -1,4 +1,4 @@
-"""Non-regression tests for Cerberus V-049, V-050 and V-051 (lib-app-bitcoin).
+"""Non-regression tests for Cerberus V-049, V-050, V-051 and V-053 (lib-app-bitcoin).
 
 A prompt holds its command's reply until the user answers. Both findings need
 the host to send another command meanwhile, which rewrites the state the
@@ -10,6 +10,9 @@ pending approval acts on:
   promotes the trusted-input hash to a signable one.
 - V-051: FINALIZE while an output prompt is open, so the output still buffered
   is counted twice and the fee screen understates the fee.
+- V-053: a new transaction while HASH SIGN's unusual sign-path prompt is open,
+  so approving the path signs a transaction nobody reviewed. Its message
+  variant is the V-049 test.
 
 The app has no lock of its own. The SDK refuses any command while a reply is
 pending, with 0x6901, from v26.6.1 on API level 26 and v27.1.0 on API level 27.
@@ -22,15 +25,23 @@ import socket
 import struct
 
 from ragger.backend.interface import BackendInterface
+from ragger.firmware import Firmware
+from ragger.navigator import Navigator
 
 from ragger_bitcoin import RaggerClient
 
 from test_op_return_omni import drive_to_outputs, payment_output
+from test_review_restart import (finalize, navigated_status,
+                                 review_whole_transaction, start_transaction)
 
 CLA = 0xE0
 INS_GET_TRUSTED_INPUT = 0x42
+INS_HASH_INPUT_START = 0x44
+INS_HASH_SIGN = 0x48
 INS_HASH_INPUT_FINALIZE_FULL = 0x4A
 INS_SIGN_MESSAGE = 0x4E
+
+SIGHASH_ALL = 0x01
 
 FINALIZE_P1_MORE = 0x00
 FINALIZE_P1_LAST = 0x80
@@ -41,6 +52,11 @@ SW_COMMAND_NOT_ACCEPTED = 0x6901
 # m/44'/1'/0'/0/0
 KEY_PATH = bytes([5]) + b"".join(
     struct.pack(">I", c) for c in (0x8000002C, 0x80000001, 0x80000000, 0, 0))
+
+# m/44'/0'/0'/0/0: the mainnet coin type makes the testnet build ask about the
+# sign path.
+UNUSUAL_SIGN_PATH = bytes([5]) + b"".join(
+    struct.pack(">I", c) for c in (0x8000002C, 0x80000000, 0x80000000, 0, 0))
 
 
 def apdu(ins: int, p1: int, p2: int, data: bytes) -> bytes:
@@ -77,10 +93,12 @@ class RawApdu:
         return data
 
 
-def open_prompt(backend: BackendInterface, command: bytes) -> RawApdu:
+def open_prompt(backend: BackendInterface, command: bytes,
+                text: str = "Review|Sign") -> RawApdu:
     raw = RawApdu(backend)
     raw.send(command)
-    backend.wait_for_text_on_screen("Review|Sign")
+    # Ragger anchors the pattern at the start of each screen text.
+    backend.wait_for_text_on_screen(text)
     return raw
 
 
@@ -119,5 +137,26 @@ class TestInterleavedCommand:
         raw = open_prompt(backend, bytes(more))
         raw.send(apdu(INS_HASH_INPUT_FINALIZE_FULL, FINALIZE_P1_LAST, 0x00,
                       payment_output(700)))
+        status = raw.status()
+        assert status == SW_COMMAND_NOT_ACCEPTED, f"got 0x{status:04X}"
+
+    def test_transaction_start_during_sign_path_prompt_is_refused(
+            self, navigator: Navigator, firmware: Firmware,
+            client: RaggerClient, test_name: str):
+        """V-053: a new transaction must not slip under A's sign-path prompt."""
+        backend = client.app.dongle.transport_client
+        start_transaction(client)
+        status = navigated_status(
+            client, navigator, test_name, review_whole_transaction(firmware),
+            finalize(FINALIZE_P1_LAST, b"\x01" + payment_output(500)))
+        assert status == SW_OK, f"got 0x{status:04X}"
+
+        raw = open_prompt(
+            backend,
+            apdu(INS_HASH_SIGN, 0x00, 0x00, UNUSUAL_SIGN_PATH + b"\x00"
+                 + struct.pack(">I", 0) + bytes([SIGHASH_ALL])),
+            "Unusual|The sign path")
+        raw.send(apdu(INS_HASH_INPUT_START, 0x00, 0x00,
+                      struct.pack("<I", 1) + b"\x01"))
         status = raw.status()
         assert status == SW_COMMAND_NOT_ACCEPTED, f"got 0x{status:04X}"
