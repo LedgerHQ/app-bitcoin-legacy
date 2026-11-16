@@ -10,8 +10,9 @@ on:
 
 jobs:
   job_functional_tests:
-    uses: LedgerHQ/app-exchange/.github/workflows/reusable_swap_functional_tests.yml@develop
+    uses: LedgerHQ/app-exchange-dev/.github/workflows/reusable_swap_functional_tests.yml@develop
     with:
       branch_for_bitcoin_legacy: ${{ github.ref }}
-      repo_for_bitcoin_legacy: ${{ github.repository }}
       test_filter: '"ltc or litecoin or Litecoin"'
+    secrets:
+      token: ${{ secrets.CI_BOT_TOKEN }}

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [2.4.15] - 2026-11-13
+
+### Fixed
+
+- Security fixes from `lib-app-bitcoin`: malformed commands are refused instead of crashing the app
+
+### Removed
+
+- Silent BitID message signing
+
+## [2.4.14] - 2026-11-03
+
+### Fixed
+
+- Security fixes from `lib-app-bitcoin`: message signing, output review, change path warning, SegWit input warning, repeated signatures, swap, and Hydra change detection
+
 ## [2.4.13] - 2026-09-25
 
 ### Fixed
